@@ -20,11 +20,7 @@ public class PaymentServiceImpl implements PaymentService {
   private final ExecutorService executorService;
 
   private final AtomicInteger retryCount = new AtomicInteger(0);
-  private static final long SLEEP_DURATION = 1000;
-  private static final int MAX_RETRIES = 3;
-  private static final long TIMEOUT_DURATION = 2000;
 
-  private final Constants constants;
 
   @Override
   public String processPayment() {
@@ -62,7 +58,7 @@ public class PaymentServiceImpl implements PaymentService {
 //      throw new Exception("Simulated payment failure");
 
       Future<String> externalApiResponse = executorService.submit(this::makeExternalApiCall);
-      String result = externalApiResponse.get(TIMEOUT_DURATION, TimeUnit.MILLISECONDS);
+      String result = externalApiResponse.get(Constants.TIMEOUT_DURATION, TimeUnit.MILLISECONDS);
       if (result.equals(Constants.FAILURE)) {
         log.warn("##### External API call timeout, payment process aborted.");
         return PaymentStatus.PAYMENT_FAILURE.name();
@@ -80,9 +76,9 @@ public class PaymentServiceImpl implements PaymentService {
 
   private String handlePaymentWithRetry() {
     try {
-      Thread.sleep(SLEEP_DURATION);
+      Thread.sleep(Constants.SLEEP_DURATION);
       int count = retryCount.incrementAndGet();
-      if (count <= MAX_RETRIES) {
+      if (count <= Constants.MAX_RETRIES) {
         log.info("Retrying payment... Attempt: " + count);
         return simulatePayment();
       } else {

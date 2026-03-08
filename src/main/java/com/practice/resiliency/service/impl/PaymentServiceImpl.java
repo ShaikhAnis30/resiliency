@@ -57,6 +57,8 @@ public class PaymentServiceImpl implements PaymentService {
     try {
 //      throw new Exception("Simulated payment failure");
 
+      //Now here we need ExecutorService to call the external API with timeout,
+      // as we want to simulate the timeout scenario and handle it gracefully
       Future<String> externalApiResponse = executorService.submit(this::makeExternalApiCall);
       String result = externalApiResponse.get(Constants.TIMEOUT_DURATION, TimeUnit.MILLISECONDS);
       if (result.equals(Constants.FAILURE)) {

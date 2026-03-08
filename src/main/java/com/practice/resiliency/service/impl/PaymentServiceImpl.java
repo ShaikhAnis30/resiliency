@@ -3,6 +3,8 @@ package com.practice.resiliency.service.impl;
 import com.practice.resiliency.enums.PaymentStatus;
 import com.practice.resiliency.service.PaymentService;
 import com.practice.resiliency.utils.Constants;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -59,8 +61,7 @@ public class PaymentServiceImpl implements PaymentService {
 
       //Now here we need ExecutorService to call the external API with timeout,
       // as we want to simulate the timeout scenario and handle it gracefully
-      Future<String> externalApiResponse = executorService.submit(this::makeExternalApiCall);
-      String result = externalApiResponse.get(Constants.TIMEOUT_DURATION, TimeUnit.MILLISECONDS);
+      String result = handleExternalCallWithTimeout(this::makeExternalApiCall);
       if (result.equals(Constants.FAILURE)) {
         log.warn("##### External API call timeout, payment process aborted.");
         return PaymentStatus.PAYMENT_FAILURE.name();
@@ -105,5 +106,10 @@ public class PaymentServiceImpl implements PaymentService {
       return Constants.FAILURE;
     }
     return Constants.SUCCESS;
+  }
+  private <T> T handleExternalCallWithTimeout(Callable<T> task)
+      throws ExecutionException, InterruptedException, TimeoutException {
+    Future<T> externalApiResponse = executorService.submit(task);
+    return externalApiResponse.get(Constants.TIMEOUT_DURATION, TimeUnit.MILLISECONDS);
   }
 }

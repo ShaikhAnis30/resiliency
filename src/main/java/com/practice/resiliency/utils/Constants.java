@@ -10,4 +10,6 @@ public class Constants {
   public static final int MAX_RETRIES = 3;
   public static final long TIMEOUT_DURATION = 2000;
 
+  public static final int MAX_FAILURE_THRESHOLD = 6;
+  public static final long CIRCUIT_OPEN_DURATION = 10000;
 }

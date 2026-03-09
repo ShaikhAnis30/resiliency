@@ -9,7 +9,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,9 @@ public class PaymentServiceImpl implements PaymentService {
   private final ExecutorService executorService;
 
   private final AtomicInteger retryCount = new AtomicInteger(0);
+  private final AtomicInteger failureCount = new AtomicInteger(0);
+  private final AtomicBoolean circuitOpen = new AtomicBoolean(false);
+  private final AtomicLong lastFailureTime = new AtomicLong(System.currentTimeMillis());
 
 
   @Override
@@ -56,23 +61,29 @@ public class PaymentServiceImpl implements PaymentService {
   }
 
   private String simulatePayment() {
+
+    if (circuitOpen.get()) {
+      return handleCircuitOpenState();
+    }
+
     try {
-//      throw new Exception("Simulated payment failure");
+      throw new Exception("Simulated payment failure");
 
       //Now here we need ExecutorService to call the external API with timeout,
       // as we want to simulate the timeout scenario and handle it gracefully
-      String result = handleExternalCallWithTimeout(this::makeExternalApiCall);
-      if (result.equals(Constants.FAILURE)) {
-        log.warn("##### External API call timeout, payment process aborted.");
-        return PaymentStatus.PAYMENT_FAILURE.name();
-      }
-      return PaymentStatus.PAYMENT_SUCCESS.name();
+//      String result = handleExternalCallWithTimeout(this::makeExternalApiCall);
+//      if (result.equals(Constants.FAILURE)) {
+//        log.warn("##### External API call timeout, payment process aborted.");
+//        return PaymentStatus.PAYMENT_FAILURE.name();//I have terminated, but can be retried.
+//      }
+//      return PaymentStatus.PAYMENT_SUCCESS.name();
     } catch (TimeoutException timeoutException) {
       log.warn("##### External API call timeout, payment process aborted: "
           + timeoutException.getMessage());
       return PaymentStatus.PAYMENT_FAILURE.name();
     } catch (Exception ex) {
       //resiliency logic
+      updateCircuitBreaker();
       return handlePaymentWithRetry();
     }
   }
@@ -85,8 +96,10 @@ public class PaymentServiceImpl implements PaymentService {
         log.info("Retrying payment... Attempt: " + count);
         return simulatePayment();
       } else {
+        failureCount.set((failureCount.intValue() + count) - 1);
         retryCount.set(0);
         log.error("Payment failed after 3 attempts.");
+        log.info("-----Failure count updated: " + failureCount);
         return PaymentStatus.PAYMENT_FAILURE.name();
       }
     } catch (InterruptedException ex) {
@@ -100,16 +113,63 @@ public class PaymentServiceImpl implements PaymentService {
 
     try {
       log.info("-----External API called, waiting for response");
-      Thread.sleep(3000); // Simulate delay
+      Thread.sleep(2000); // Simulate delay
     } catch (Exception ex) {
       log.error("Error calling external API: " + ex.getMessage(), ex);
       return Constants.FAILURE;
     }
     return Constants.SUCCESS;
   }
+
   private <T> T handleExternalCallWithTimeout(Callable<T> task)
       throws ExecutionException, InterruptedException, TimeoutException {
     Future<T> externalApiResponse = executorService.submit(task);
     return externalApiResponse.get(Constants.TIMEOUT_DURATION, TimeUnit.MILLISECONDS);
   }
+
+
+  private void updateCircuitBreaker() {
+    int failureCount = this.failureCount.intValue();
+    if (failureCount >= Constants.MAX_FAILURE_THRESHOLD) {
+      log.warn("##### Circuit breaker opened due to consecutive failures. Failure count: "
+          + failureCount);
+      circuitOpen.set(true);
+      lastFailureTime.set(System.currentTimeMillis());
+    }
+  }
+
+  private String handleCircuitOpenState() {
+    long currentTime = System.currentTimeMillis();
+    long timeSinceLastFailure = currentTime - this.lastFailureTime.get();
+    if (timeSinceLastFailure > Constants.CIRCUIT_OPEN_DURATION) {
+//      log.info(
+//          "##### Circuit half-open, allowing a test request to check if the external API has recovered. Last failure was "
+//              + timeSinceLastFailure + " ms ago.");
+//      String result = simulatePayment();
+//      if (result.equals(PaymentStatus.PAYMENT_FAILURE.name())) {
+//        log.warn(
+//            "##### Test request failed, keeping circuit open. Last failure was " + timeSinceLastFailure
+//                + " ms ago.");
+//        this.lastFailureTime.set(System.currentTimeMillis());
+//      } else {
+//        log.info(
+//            "##### Test request succeeded, closing circuit and resetting failure count. Last failure was "
+//                + timeSinceLastFailure + " ms ago.");
+//        this.circuitOpen.set(false);
+//        this.failureCount.set(0);
+//      }
+//      return result;
+      log.info("Circuit HALF-OPEN. Testing external API.");
+
+      circuitOpen.set(false);
+
+      return simulatePayment();
+    } else {
+      log.warn(
+          "##### Circuit is open, rejecting payment request. Last failure was " + timeSinceLastFailure
+              + " ms ago.");
+      return PaymentStatus.PAYMENT_FAILURE.name();
+    }
+  }
+
 }

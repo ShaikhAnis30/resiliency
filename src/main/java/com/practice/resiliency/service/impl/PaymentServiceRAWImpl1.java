@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Service
 @Slf4j
-public class PaymentServiceImpl implements PaymentService {
+public class PaymentServiceRAWImpl1 implements PaymentService {
 
   private final ExecutorService executorService;
 
@@ -129,10 +129,11 @@ public class PaymentServiceImpl implements PaymentService {
 
 
   private void updateCircuitBreaker() {
-    int failureCount = this.failureCount.intValue();
-    if (failureCount >= Constants.MAX_FAILURE_THRESHOLD) {
+    int failures = this.failureCount.intValue();
+    log.warn("Failure recorded. Current failure count: {}", failures);
+    if (failures >= Constants.MAX_FAILURE_THRESHOLD) {
       log.warn("##### Circuit breaker opened due to consecutive failures. Failure count: "
-          + failureCount);
+          + failures);
       circuitOpen.set(true);
       lastFailureTime.set(System.currentTimeMillis());
     }
@@ -142,23 +143,6 @@ public class PaymentServiceImpl implements PaymentService {
     long currentTime = System.currentTimeMillis();
     long timeSinceLastFailure = currentTime - this.lastFailureTime.get();
     if (timeSinceLastFailure > Constants.CIRCUIT_OPEN_DURATION) {
-//      log.info(
-//          "##### Circuit half-open, allowing a test request to check if the external API has recovered. Last failure was "
-//              + timeSinceLastFailure + " ms ago.");
-//      String result = simulatePayment();
-//      if (result.equals(PaymentStatus.PAYMENT_FAILURE.name())) {
-//        log.warn(
-//            "##### Test request failed, keeping circuit open. Last failure was " + timeSinceLastFailure
-//                + " ms ago.");
-//        this.lastFailureTime.set(System.currentTimeMillis());
-//      } else {
-//        log.info(
-//            "##### Test request succeeded, closing circuit and resetting failure count. Last failure was "
-//                + timeSinceLastFailure + " ms ago.");
-//        this.circuitOpen.set(false);
-//        this.failureCount.set(0);
-//      }
-//      return result;
       log.info("Circuit HALF-OPEN. Testing external API.");
 
       circuitOpen.set(false);
@@ -166,7 +150,8 @@ public class PaymentServiceImpl implements PaymentService {
       return simulatePayment();
     } else {
       log.warn(
-          "##### Circuit is open, rejecting payment request. Last failure was " + timeSinceLastFailure
+          "##### Circuit is open, rejecting payment request. Last failure was "
+              + timeSinceLastFailure
               + " ms ago.");
       return PaymentStatus.PAYMENT_FAILURE.name();
     }
